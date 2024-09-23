@@ -5,8 +5,8 @@
 # This script is designed to give users a warning that their computer has been on for 
 # too long and needs to reboot.
 # It can be used with a Launch Daemon or via MDM script.
-# This is version 3.5
-echo "Running ScheduleReboot script version 3.5"
+# This is version 3.6
+echo "Running ScheduleReboot script version 3.6"
 #########################################################################################
 #
 # The list of variables, their purpose, and override parameters:
@@ -39,17 +39,16 @@ echo "Running ScheduleReboot script version 3.5"
 
 # Function to write a message to the jamf log file
 log_message() {
+    local log_file="/var/log/reboot_script.log"  # Correct log location
+    
+    # Create the log file if it doesn't exist and set correct permissions
+    if [ ! -f "$log_file" ]; then
+        touch "$log_file"
+        chmod 644 "$log_file"
+    fi
 
-if [ `id -u` -ne 0 ]; then 
-    local log_file=/Users/Shared/rebooter.log 
-else
-    local log_file=/usr/local/bin/reboot_script.sh 
-    touch $log_file
-
-fi
-	local log_prefix=("	["$1"] - ")
+    local log_prefix=("["$1"] - ")
     local message="${log_prefix}$2"
-
 
     # Check if message is provided
     if [ -z "$message" ]; then
@@ -60,8 +59,8 @@ fi
     # Append the message to the log file with a timestamp
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $message" >> "$log_file"
 }
-
 log_message "REBOOT-SCHEDULER" "------ BEGIN REBOOT SCHEDULER -----"
+log_message "REBOOT-SCHEDULER" "Running ScheduleReboot script version 3.6"
 
 ###### Set your variables here. #######
 
@@ -157,11 +156,17 @@ fi
 log_message "uptime" "uptimeDays set to $uptimeDays."
 echo "[uptime] -- uptimeDays set to $uptimeDays."
 
-
 # Days left before the uptimeLimit is reached.
 remainingDays=$((uptimeLimit - uptimeDays))
-log_message "remainingDays" "remainingDays set to $remainingDays."
-echo "[remainingDays] -- remainingDays set to $remainingDays."
+
+# New logic to handle negative remainingDays
+if [ $remainingDays -lt 0 ]; then
+    log_message "remainingDays" "remainingDays is negative: $remainingDays. Immediate reboot is required."
+    echo "[remainingDays] -- remainingDays is negative: $remainingDays. Immediate reboot is required."
+else
+    log_message "remainingDays" "remainingDays set to $remainingDays."
+    echo "[remainingDays] -- remainingDays set to $remainingDays."
+fi
 
 # Set the path to jamfHelper
 jamfHelper="/Library/Application Support/JAMF/bin/jamfHelper.app/Contents/MacOS/jamfHelper"
@@ -193,14 +198,19 @@ display_message() {
     newline=$'\n'
 
     if [[ $1 -le 0 ]]; then
-        if [[ "$currentTime" > "$scheduledRebootTime" ]]; then
-            log_message "display_message" "Current time is $currentTime and after scheduled reboot time ($scheduledRebootTime) on the last deferral day. Displaying reminder."
+        if [[ $1 -lt 0 ]]; then
+            # If remainingDays is negative, force reboot but provide a countdown
+            log_message "display_message" "Immediate reboot due to negative remaining days ($1), but providing countdown."
+            heading="Immediate Reboot Required"
+            content="Your computer has exceeded its uptime limit and will reboot in $countdownTimer minutes. Please save your work."
+            user_choice="$("$jamfHelper" -windowType utility -title "$title" -heading "$heading" -description "$content" -icon "$icon" -button1 "$button1" -defaultButton "1" -timeout "$timeoutTimer" -countdown -alignCountdown right)"
+        elif [[ "$currentTime" > "$scheduledRebootTime" ]]; then
+            log_message "display_message" "Current time is $currentTime and after scheduled reboot time ($scheduledRebootTime). Displaying reminder."
             heading="Reboot Required"
             content="Your computer must reboot now.${newline}Please save your work."
-            user_choice="$("$jamfHelper" -windowType utility -title "$title" -heading "$heading" -description "$content" -icon "$icon" -button1 "$button1" -button2 "Defer $countdownTimer""min" -defaultButton "1" -timeout "$timeoutTimer" -countdown -alignCountdown right)"
+            user_choice="$("$jamfHelper" -windowType utility -title "$title" -heading "$heading" -description "$content" -icon "$icon" -button1 "$button1" -button2 "Defer $countdownTimer min" -defaultButton "1" -timeout "$timeoutTimer" -countdown -alignCountdown right)"
         else
             log_message "display_message" "Current time is before scheduled reboot time on the last deferral day. Delaying reminder."
-            # Delay the reminder and exit the script
             exit 0
         fi
     elif [[ $1 -eq 1 ]]; then
