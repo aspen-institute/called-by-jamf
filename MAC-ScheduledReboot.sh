@@ -5,8 +5,8 @@
 # This script is designed to give users a warning that their computer has been on for 
 # too long and needs to reboot.
 # It can be used with a Launch Daemon or via MDM script.
-# This is version 3.6
-echo "Running ScheduleReboot script version 3.6"
+# This is version 3.7
+echo "Running ScheduleReboot script version 3.7"
 #########################################################################################
 #
 # The list of variables, their purpose, and override parameters:
@@ -81,7 +81,7 @@ log_message "deferralLimit" "$deferralLimit"
 
 # Used to test the script. Set the uptime length you want to test here.
 # If you set a number here, it will not reboot the computer, but will show the messages.
-testUptime=""
+testUptime="26"
 if [ ! -z "$6" ]; then
 	testUptime=$6
 fi
@@ -137,6 +137,7 @@ log_message "scheduledRebootTime" "Scheduled reboot time set to $scheduledReboot
 if [ ! -z $testUptime ]; then
 # 	Override if testUptime is filled in.
     uptimeDays=$testUptime
+   	echo "[uptime_check-TEST] -- Computer reporting uptime as: $uptimeDays"
 else
     uptime_output=$(uptime)
     uptimeDays=0
@@ -183,7 +184,54 @@ fi
 #########################################################################################
 # Define the functions used in this script.
 
-# Function to display the message using jamfHelper
+
+# Function to read the StartCalendarInterval from LaunchDaemon
+get_launchdaemon_intervals() {
+    # Use PlistBuddy to extract the StartCalendarInterval values for both check times
+	firstCheckHour=$(defaults read /Library/LaunchDaemons/com.aspeninstitute.reboot.plist StartCalendarInterval | grep -A 1 "Hour" | head -n 1 | awk '{print $3}' | tr -d ';')
+	firstCheckMinute=$(defaults read /Library/LaunchDaemons/com.aspeninstitute.reboot.plist StartCalendarInterval | grep -A 1 "Minute" | head -n 1 | awk '{print $3}' | tr -d ';')
+	secondCheckHour=$(defaults read /Library/LaunchDaemons/com.aspeninstitute.reboot.plist StartCalendarInterval | grep -A 1 "Hour" | tail -n 2 | head -n 1 | awk '{print $3}' | tr -d ';')
+	secondCheckMinute=$(defaults read /Library/LaunchDaemons/com.aspeninstitute.reboot.plist StartCalendarInterval | grep -A 1 "Minute" | tail -n 2 | head -n 1 | awk '{print $3}' | tr -d ';')
+
+    # Handle missing data
+    if [ -z "$firstCheckHour" ] || [ -z "$secondCheckHour" ]; then
+        log_message "ERROR" "Failed to retrieve check intervals from LaunchDaemon plist."
+        exit 1
+    fi
+
+    echo "First check interval at $firstCheckHour:$firstCheckMinute, second check interval at $secondCheckHour:$secondCheckMinute"
+    log_message "intervals" "First check at $firstCheckHour:$firstCheckMinute, second check at $secondCheckHour:$secondCheckMinute"
+}
+
+# Call the function to retrieve the first and second check times
+get_launchdaemon_intervals
+
+# Determine the current time in hours and minutes
+currentHour=$(date +"%H")
+currentMinute=$(date +"%M")
+currentTotalMinutes=$((currentHour * 60 + currentMinute))
+
+# Calculate the total time in minutes for first and second checks
+firstCheckTotalMinutes=$((firstCheckHour * 60 + firstCheckMinute))
+secondCheckTotalMinutes=$((secondCheckHour * 60 + secondCheckMinute))
+
+# Adjust countdown based on current time
+if [[ "$currentTotalMinutes" -lt "$secondCheckTotalMinutes" ]]; then
+    log_message "countdown_adjustment" "Current time is before the second check interval."
+
+    # Calculate the time left until the second check
+    timeLeftUntilSecondCheck=$((secondCheckTotalMinutes - currentTotalMinutes))
+
+    if [[ "$timeLeftUntilSecondCheck" -gt 0 ]]; then
+        countdownTimer=$timeLeftUntilSecondCheck
+        log_message "countdown_adjustment" "Countdown adjusted to $countdownTimer minutes (time left until the second check interval)."
+    fi
+else
+    log_message "countdown_adjustment" "Current time is after the second check interval. Using the default 10-minute countdown."
+    countdownTimer=10
+fi
+
+# Continue with the rest of the script (handling remainingDays, reboot warnings, etc.)
 display_message() {
     log_message "display_message" "remaining days input as: $1"
     title="Reboot Reminder"
@@ -199,8 +247,8 @@ display_message() {
 
     if [[ $1 -le 0 ]]; then
         if [[ $1 -lt 0 ]]; then
-            # If remainingDays is negative, force reboot but provide a countdown
-            log_message "display_message" "Immediate reboot due to negative remaining days ($1), but providing countdown."
+            # Immediate reboot with countdown
+            log_message "display_message" "Immediate reboot due to negative remaining days ($1), countdown of $countdownTimer minutes."
             heading="Immediate Reboot Required"
             content="Your computer has exceeded its uptime limit and will reboot in $countdownTimer minutes. Please save your work."
             user_choice="$("$jamfHelper" -windowType utility -title "$title" -heading "$heading" -description "$content" -icon "$icon" -button1 "$button1" -defaultButton "1" -timeout "$timeoutTimer" -countdown -alignCountdown right)"
@@ -237,9 +285,9 @@ display_countdown() {
 	newline=$'\n'
 	timeoutTimer=$((countdownTimer * 60))
 
-    content="Your computer will reboot in $1 minute(s).${newline}Please save your work.${newline}${newline}If you click OK below, your computer will reboot imediately."
+    content="Your computer will reboot in $1 minute(s).${newline}Please save your work.${newline}${newline}If you click \"Reboot Now\" below, your computer will reboot imediately."
     icon="/System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/AlertStopIcon.icns"
-	"$jamfHelper" -windowType utility -title "$title" -heading "$heading" -description "$content" -icon "$icon" -timeout "$timeoutTimer" -button1 "OK" -countdown -alignCountdown right -defaultButton 1 1> /dev/null
+	"$jamfHelper" -windowType utility -title "$title" -heading "$heading" -description "$content" -icon "$icon" -timeout "$timeoutTimer" -button1 "Reboot Now" -countdown -alignCountdown right -defaultButton 1 1> /dev/null
 }
 
 # Function to forcefully quit a process that did not gracefully shut down
