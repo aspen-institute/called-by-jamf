@@ -81,7 +81,7 @@ log_message "deferralLimit" "$deferralLimit"
 
 # Used to test the script. Set the uptime length you want to test here.
 # If you set a number here, it will not reboot the computer, but will show the messages.
-testUptime="26"
+testUptime=""
 if [ ! -z "$6" ]; then
 	testUptime=$6
 fi
