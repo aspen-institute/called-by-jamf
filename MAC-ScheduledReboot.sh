@@ -65,7 +65,7 @@ log_message "REBOOT-SCHEDULER" "Running ScheduleReboot script version 3.6"
 ###### Set your variables here. #######
 
 # Limit for how many days before a computer must reboot.
-uptimeLimit=5
+uptimeLimit=14
 if [ ! -z "$4" ]; then
 	uptimeLimit=$4
 fi
