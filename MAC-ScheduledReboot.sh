@@ -5,8 +5,8 @@
 # This script is designed to give users a warning that their computer has been on for 
 # too long and needs to reboot.
 # It can be used with a Launch Daemon or via MDM script.
-# This is version 3.7
-echo "Running ScheduleReboot script version 3.7"
+# This is version 3.8
+echo "Running ScheduleReboot script version 3.8"
 #########################################################################################
 #
 # The list of variables, their purpose, and override parameters:
